@@ -3,6 +3,110 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const userIcon = document.getElementById("user-icon");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const loginMessage = document.getElementById("login-message");
+  const closeBtn = document.querySelector(".close");
+
+  let currentTeacherToken = localStorage.getItem("teacherToken") || null;
+
+  // Update UI based on login state
+  function updateLoginUI() {
+    if (currentTeacherToken) {
+      userIcon.textContent = "✅ Teacher Logged In";
+      userIcon.classList.add("logged-in");
+      userIcon.title = "Click to Logout";
+    } else {
+      userIcon.textContent = "👨‍🏫";
+      userIcon.classList.remove("logged-in");
+      userIcon.title = "Click to Login";
+    }
+  }
+
+  // Login modal events
+  userIcon.addEventListener("click", () => {
+    if (currentTeacherToken) {
+      // Logout
+      handleLogout();
+    } else {
+      // Show login modal
+      loginModal.classList.remove("hidden");
+    }
+  });
+
+  closeBtn.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+    loginMessage.classList.add("hidden");
+  });
+
+  loginModal.addEventListener("click", (e) => {
+    if (e.target === loginModal) {
+      loginModal.classList.add("hidden");
+      loginMessage.classList.add("hidden");
+    }
+  });
+
+  // Handle login
+  loginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const username = document.getElementById("teacher-username").value;
+    const password = document.getElementById("teacher-password").value;
+
+    try {
+      const response = await fetch(
+        `/login?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
+        { method: "POST" }
+      );
+
+      const result = await response.json();
+
+      if (response.ok) {
+        currentTeacherToken = result.token;
+        localStorage.setItem("teacherToken", currentTeacherToken);
+        loginMessage.textContent = result.message;
+        loginMessage.className = "success";
+        loginMessage.classList.remove("hidden");
+        
+        updateLoginUI();
+        fetchActivities();
+        
+        setTimeout(() => {
+          loginModal.classList.add("hidden");
+          loginMessage.classList.add("hidden");
+          loginForm.reset();
+        }, 1500);
+      } else {
+        loginMessage.textContent = result.detail || "Login failed";
+        loginMessage.className = "error";
+        loginMessage.classList.remove("hidden");
+      }
+    } catch (error) {
+      loginMessage.textContent = "Login error. Please try again.";
+      loginMessage.className = "error";
+      loginMessage.classList.remove("hidden");
+      console.error("Login error:", error);
+    }
+  });
+
+  // Handle logout
+  async function handleLogout() {
+    try {
+      const response = await fetch(
+        `/logout?teacher_token=${encodeURIComponent(currentTeacherToken)}`,
+        { method: "POST" }
+      );
+
+      if (response.ok) {
+        currentTeacherToken = null;
+        localStorage.removeItem("teacherToken");
+        updateLoginUI();
+        fetchActivities();
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -21,6 +125,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const spotsLeft =
           details.max_participants - details.participants.length;
 
+        // Only show delete buttons to logged-in teachers
+        const deleteButtonHTML = currentTeacherToken
+          ? `<button class="delete-btn" data-activity="${name}" data-email="{email}">❌</button>`
+          : "";
+
         // Create participants HTML with delete icons instead of bullet points
         const participantsHTML =
           details.participants.length > 0
@@ -30,7 +139,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${details.participants
                   .map(
                     (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                      `<li><span class="participant-email">${email}</span>${
+                        currentTeacherToken
+                          ? `<button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button>`
+                          : ""
+                      }</li>`
                   )
                   .join("")}
               </ul>
@@ -73,11 +186,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const activity = button.getAttribute("data-activity");
     const email = button.getAttribute("data-email");
 
+    if (!currentTeacherToken) {
+      messageDiv.textContent = "You must be logged in as a teacher to unregister students";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      return;
+    }
+
     try {
       const response = await fetch(
         `/activities/${encodeURIComponent(
           activity
-        )}/unregister?email=${encodeURIComponent(email)}`,
+        )}/unregister?email=${encodeURIComponent(email)}&teacher_token=${encodeURIComponent(currentTeacherToken)}`,
         {
           method: "DELETE",
         }
@@ -156,5 +276,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Initialize app
+  updateLoginUI();
   fetchActivities();
 });
+
